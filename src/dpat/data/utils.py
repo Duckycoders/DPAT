@@ -30,27 +30,18 @@ def load_rna_bert_tokenizer(model_name: str = "multimolecule/rnafm"):
         Tokenizer instance
     """
     try:
-        # Try to load with nucleotide tokenization (not codon)
+        # Load basic RNA-BERT tokenizer
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
-            trust_remote_code=True,  # 必须！允许自定义类
-            tokenization_strategy='nt'  # 使用nucleotide tokenization而非codon
+            trust_remote_code=True
         )
+        print(f"✅ Successfully loaded {model_name} tokenizer")
         return tokenizer
-    except Exception as e1:
-        print(f"Error loading tokenizer {model_name} with nucleotide tokenization: {e1}")
-        try:
-            # Try without specifying tokenization strategy
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_name,
-                trust_remote_code=True
-            )
-            return tokenizer
-        except Exception as e2:
-            print(f"Error loading tokenizer {model_name}: {e2}")
-            print("Using backup tokenizer...")
-            # Fallback to a more basic tokenizer if RNA-BERT is not available
-            return create_simple_rna_tokenizer()
+    except Exception as e:
+        print(f"❌ Error loading tokenizer {model_name}: {e}")
+        print("Using backup tokenizer...")
+        # Fallback to a more basic tokenizer if RNA-BERT is not available
+        return create_simple_rna_tokenizer()
 
 
 def create_simple_rna_tokenizer():
@@ -151,16 +142,14 @@ def prepare_bert_input(mirna_seq: str, mrna_window: str, tokenizer,
     # Combine sequences with [SEP] token
     combined_seq = mirna_seq + '[SEP]' + mrna_rc
     
-    # Ensure sequence length is multiple of 3 for codon tokenization
-    seq_len = len(combined_seq)
-    if seq_len % 3 != 0:
-        # Pad with 'N' to make length multiple of 3
-        padding_needed = 3 - (seq_len % 3)
-        combined_seq += 'N' * padding_needed
+    # Check if tokenizer is the simple RNA tokenizer
+    if hasattr(tokenizer, 'vocab_size') and tokenizer.vocab_size < 100:
+        # Use simple tokenizer directly
+        return use_simple_tokenizer(combined_seq, tokenizer, max_length)
     
     try:
-        # Tokenize
-        encoded = tokenizer.encode(
+        # Try RNA-BERT tokenizer
+        encoded = tokenizer(
             combined_seq,
             add_special_tokens=True,
             max_length=max_length,
@@ -169,39 +158,53 @@ def prepare_bert_input(mirna_seq: str, mrna_window: str, tokenizer,
             return_tensors='pt'
         )
         
+        # Ensure correct tensor shape
+        input_ids = encoded['input_ids']
+        attention_mask = encoded['attention_mask']
+        
+        # Handle batch dimension
+        if input_ids.dim() > 1:
+            input_ids = input_ids.squeeze(0)
+        if attention_mask.dim() > 1:
+            attention_mask = attention_mask.squeeze(0)
+        
         return {
-            'input_ids': encoded['input_ids'].squeeze(0),
-            'attention_mask': encoded['attention_mask'].squeeze(0)
+            'input_ids': input_ids,
+            'attention_mask': attention_mask
         }
     except Exception as e:
-        # Fallback: use character-level tokenization
-        print(f"Codon tokenization failed: {e}")
+        # Fallback: use character-level tokenization  
+        print(f"RNA-BERT tokenization failed: {e}")
         print(f"Using character-level tokenization for sequence: {combined_seq[:50]}...")
-        
-        # Create simple character-level encoding
-        vocab = {'A': 1, 'U': 2, 'G': 3, 'C': 4, 'N': 5, '[SEP]': 6, '[PAD]': 0, '[CLS]': 7, '[UNK]': 8}
-        
-        # Add special tokens
-        tokens = ['[CLS]'] + list(combined_seq) + ['[SEP]']
-        
-        # Convert to IDs
-        input_ids = [vocab.get(token, vocab['[UNK]']) for token in tokens]
-        
-        # Pad or truncate to max_length
-        if len(input_ids) > max_length:
-            input_ids = input_ids[:max_length]
-        else:
-            input_ids.extend([vocab['[PAD]']] * (max_length - len(input_ids)))
-        
-        # Create attention mask
-        attention_mask = [1] * min(len(tokens), max_length)
-        if len(attention_mask) < max_length:
-            attention_mask.extend([0] * (max_length - len(attention_mask)))
-        
-        return {
-            'input_ids': torch.tensor(input_ids, dtype=torch.long),
-            'attention_mask': torch.tensor(attention_mask, dtype=torch.long)
-        }
+        return use_simple_tokenizer(combined_seq, None, max_length)
+
+
+def use_simple_tokenizer(combined_seq: str, tokenizer, max_length: int) -> Dict[str, torch.Tensor]:
+    """Simple character-level tokenization fallback"""
+    # Create simple character-level encoding
+    vocab = {'A': 1, 'U': 2, 'G': 3, 'C': 4, 'N': 5, '[SEP]': 6, '[PAD]': 0, '[CLS]': 7, '[UNK]': 8}
+    
+    # Add special tokens
+    tokens = ['[CLS]'] + list(combined_seq) + ['[SEP]']
+    
+    # Convert to IDs
+    input_ids = [vocab.get(token, vocab['[UNK]']) for token in tokens]
+    
+    # Pad or truncate to max_length
+    if len(input_ids) > max_length:
+        input_ids = input_ids[:max_length]
+    else:
+        input_ids.extend([vocab['[PAD]']] * (max_length - len(input_ids)))
+    
+    # Create attention mask
+    attention_mask = [1] * min(len(tokens), max_length)
+    if len(attention_mask) < max_length:
+        attention_mask.extend([0] * (max_length - len(attention_mask)))
+    
+    return {
+        'input_ids': torch.tensor(input_ids, dtype=torch.long),
+        'attention_mask': torch.tensor(attention_mask, dtype=torch.long)
+    }
 
 
 def create_kfold_splits(data_path: str, n_splits: int = 10, 
