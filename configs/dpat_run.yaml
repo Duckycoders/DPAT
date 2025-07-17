@@ -5,56 +5,57 @@ data:
   train_data_path: "data/miRAW_Train_Validation.txt"
   cache_dir: "cache"
   
-# Model parameters
+# Model parameters (减少参数数量以防止过拟合)
 model:
   alignment_config:
     input_channels: 10
-    output_channels: 256
-    hidden_channels: 128
-    kernel_sizes: [1, 3, 5, 7]
+    output_channels: 128  # 减少从256到128
+    hidden_channels: 64   # 减少从128到64
+    kernel_sizes: [3, 5]  # 减少kernel数量从[1,3,5,7]到[3,5]
     use_se: true
     use_cbam: true
   
   semantic_config:
     bert_model_name: "multimolecule/rnafm"
     bert_hidden_size: 768
-    conv_hidden_size: 1024
-    lstm_hidden_size: 128
-    proj_dim: 256
-    freeze_bert: false
+    conv_hidden_size: 512  # 减少从1024到512
+    lstm_hidden_size: 64   # 减少从128到64
+    proj_dim: 128          # 减少从256到128
+    freeze_bert: true      # 冻结BERT参数减少过拟合
   
   fusion_config:
-    embed_dim: 256
-    num_heads: 8
+    embed_dim: 128         # 减少从256到128
+    num_heads: 4           # 减少从8到4
     use_gate: true
   
   num_classes: 1
-  dropout: 0.1
+  dropout: 0.3             # 增加dropout从0.1到0.3
   use_simple_semantic: false
 
-# Training parameters
+# Training parameters (调整学习率和正则化)
 training:
   batch_size: 32
-  learning_rate: 0.001
+  learning_rate: 0.0001    # 降低学习率从0.001到0.0001
   bert_learning_rate: 0.00001
   num_epochs: 100
-  warmup_steps: 1000
-  max_grad_norm: 1.0
+  warmup_steps: 500        # 减少warmup步数从1000到500
+  max_grad_norm: 0.5       # 更严格的梯度裁剪从1.0到0.5
+  weight_decay: 0.01       # 增加权重衰减
   
-# Data processing
+# Data processing (调整阈值设置)
 data_processing:
   window_size: 40
   seed_length: 12
-  alignment_threshold: 6
+  alignment_threshold: 4   # 降低阈值从6到4，增加有效样本
   max_length: 50
   max_bert_length: 512
 
-# Training settings
+# Training settings (加强正则化)
 training_settings:
-  early_stopping_patience: 10
+  early_stopping_patience: 5  # 减少patience从10到5，加强早停
   save_top_k: 3
   use_amp: true
-  accumulate_grad_batches: 1
+  accumulate_grad_batches: 2   # 增加梯度累积从1到2
   
 # Paths
 paths:

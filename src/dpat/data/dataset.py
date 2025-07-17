@@ -329,11 +329,11 @@ def create_dataloaders(train_dataset: DPATDataset,
             'alignment_score': alignment_scores
         }
     
-    # Create dataloaders - DO NOT SHUFFLE to maintain order
+    # Create dataloaders - Enable shuffling to reduce overfitting
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=False,  # Explicitly no shuffling
+        shuffle=True,   # Enable shuffling for training
         num_workers=num_workers,
         pin_memory=pin_memory,
         collate_fn=collate_fn,
@@ -343,7 +343,7 @@ def create_dataloaders(train_dataset: DPATDataset,
     val_loader = DataLoader(
         val_dataset,
         batch_size=batch_size,
-        shuffle=False,  # Explicitly no shuffling
+        shuffle=False,  # No shuffling for validation
         num_workers=num_workers,
         pin_memory=pin_memory,
         collate_fn=collate_fn,

@@ -71,7 +71,7 @@ def create_optimizer(model, config):
     optimizer = optim.AdamW([
         {'params': bert_params, 'lr': config['training']['bert_learning_rate']},
         {'params': other_params, 'lr': config['training']['learning_rate']}
-    ])
+    ], weight_decay=config['training'].get('weight_decay', 0.01))
     
     return optimizer
 
@@ -103,6 +103,8 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
     
     criterion = nn.BCEWithLogitsLoss()
     
+    accumulate_grad_batches = config['training_settings'].get('accumulate_grad_batches', 1)
+    
     for batch_idx, batch in enumerate(tqdm(train_loader, desc=f"Epoch {epoch}")):
         # Move to device
         align_matrix = batch['align_matrix'].to(device)
@@ -114,10 +116,43 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
         with autocast(enabled=config['training_settings']['use_amp']):
             logits = model(align_matrix, bert_input_ids, bert_attention_mask)
             loss = criterion(logits.squeeze(), labels)
+            # 梯度累积：除以累积步数
+            loss = loss / accumulate_grad_batches
         
         # Backward pass
         scaler.scale(loss).backward()
         
+        # 只在累积步数达到后更新参数
+        if (batch_idx + 1) % accumulate_grad_batches == 0:
+            # Gradient clipping
+            if config['training']['max_grad_norm'] > 0:
+                scaler.unscale_(optimizer)
+                apply_gradient_clipping(model, config['training']['max_grad_norm'])
+            
+            # Optimizer step
+            scaler.step(optimizer)
+            scaler.update()
+            scheduler.step()
+            optimizer.zero_grad()
+        
+        # Update metrics (使用原始loss而不是缩放后的loss)
+        actual_loss = loss.item() * accumulate_grad_batches
+        probs = torch.sigmoid(logits.squeeze())
+        accuracy.update(probs, labels.int())
+        precision.update(probs, labels.int())
+        recall.update(probs, labels.int())
+        f1.update(probs, labels.int())
+        auroc.update(probs, labels.int())
+        
+        total_loss += actual_loss
+        num_batches += 1
+        
+        # Log every N steps
+        if batch_idx % config['logging']['log_every_n_steps'] == 0:
+            logging.info(f"Epoch {epoch}, Batch {batch_idx}, Loss: {actual_loss:.4f}")
+    
+    # 处理epoch结束时的剩余梯度
+    if len(train_loader) % accumulate_grad_batches != 0:
         # Gradient clipping
         if config['training']['max_grad_norm'] > 0:
             scaler.unscale_(optimizer)
@@ -128,21 +163,6 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
         scaler.update()
         scheduler.step()
         optimizer.zero_grad()
-        
-        # Update metrics
-        probs = torch.sigmoid(logits.squeeze())
-        accuracy.update(probs, labels.int())
-        precision.update(probs, labels.int())
-        recall.update(probs, labels.int())
-        f1.update(probs, labels.int())
-        auroc.update(probs, labels.int())
-        
-        total_loss += loss.item()
-        num_batches += 1
-        
-        # Log every N steps
-        if batch_idx % config['logging']['log_every_n_steps'] == 0:
-            logging.info(f"Epoch {epoch}, Batch {batch_idx}, Loss: {loss.item():.4f}")
     
     # Compute epoch metrics
     epoch_metrics = {
