@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from typing import Tuple, Optional
+import multimolecule  # 必不可少，否则类注册不到
 from transformers import AutoModel
 
 from .utils import init_weights
@@ -187,7 +188,7 @@ class SemanticPath(nn.Module):
     """
     
     def __init__(self,
-                 bert_model_name: str = "multimolecule/rna_fm_t12u10_b512_v2",
+                 bert_model_name: str = "multimolecule/mrnafm",
                  bert_hidden_size: int = 768,
                  conv_hidden_size: int = 1024,
                  lstm_hidden_size: int = 128,

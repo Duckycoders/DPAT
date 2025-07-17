@@ -53,7 +53,7 @@ class DPAT(nn.Module):
         
         if semantic_config is None:
             semantic_config = {
-                'bert_model_name': 'multimolecule/rna_fm_t12u10_b512_v2',
+                'bert_model_name': 'multimolecule/mrnafm',
                 'bert_hidden_size': 768,
                 'conv_hidden_size': 1024,
                 'lstm_hidden_size': 128,

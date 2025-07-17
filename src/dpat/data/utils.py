@@ -8,9 +8,10 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 import h5py
 import os
+import multimolecule  # 必不可少，否则类注册不到
 
 
-def load_rna_bert_tokenizer(model_name: str = "multimolecule/rna_fm_t12u10_b512_v2"):
+def load_rna_bert_tokenizer(model_name: str = "multimolecule/mrnafm"):
     """
     Load RNA-BERT tokenizer.
     
