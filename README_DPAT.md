@@ -184,7 +184,7 @@ model:
     use_cbam: true
   
   semantic_config:
-    bert_model_name: "multimolecule/mrnafm"
+    bert_model_name: "multimolecule/rnafm"
     lstm_hidden_size: 128
     proj_dim: 256
     freeze_bert: false

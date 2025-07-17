@@ -196,7 +196,7 @@ class SemanticPath(nn.Module):
     """
     
     def __init__(self,
-                 bert_model_name: str = "multimolecule/mrnafm",
+                 bert_model_name: str = "multimolecule/rnafm",
                  bert_hidden_size: int = 768,
                  conv_hidden_size: int = 1024,
                  lstm_hidden_size: int = 128,

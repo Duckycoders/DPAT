@@ -19,7 +19,7 @@ except ImportError:
 import multimolecule  # 必不可少，否则类注册不到
 
 
-def load_rna_bert_tokenizer(model_name: str = "multimolecule/mrnafm"):
+def load_rna_bert_tokenizer(model_name: str = "multimolecule/rnafm"):
     """
     Load RNA-BERT tokenizer.
     
@@ -30,16 +30,27 @@ def load_rna_bert_tokenizer(model_name: str = "multimolecule/mrnafm"):
         Tokenizer instance
     """
     try:
+        # Try to load with nucleotide tokenization (not codon)
         tokenizer = AutoTokenizer.from_pretrained(
             model_name,
-            trust_remote_code=True  # 必须！允许自定义类
+            trust_remote_code=True,  # 必须！允许自定义类
+            tokenization_strategy='nt'  # 使用nucleotide tokenization而非codon
         )
         return tokenizer
-    except Exception as e:
-        print(f"Error loading tokenizer {model_name}: {e}")
-        print("Using backup tokenizer...")
-        # Fallback to a more basic tokenizer if RNA-BERT is not available
-        return create_simple_rna_tokenizer()
+    except Exception as e1:
+        print(f"Error loading tokenizer {model_name} with nucleotide tokenization: {e1}")
+        try:
+            # Try without specifying tokenization strategy
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_name,
+                trust_remote_code=True
+            )
+            return tokenizer
+        except Exception as e2:
+            print(f"Error loading tokenizer {model_name}: {e2}")
+            print("Using backup tokenizer...")
+            # Fallback to a more basic tokenizer if RNA-BERT is not available
+            return create_simple_rna_tokenizer()
 
 
 def create_simple_rna_tokenizer():
@@ -140,20 +151,57 @@ def prepare_bert_input(mirna_seq: str, mrna_window: str, tokenizer,
     # Combine sequences with [SEP] token
     combined_seq = mirna_seq + '[SEP]' + mrna_rc
     
-    # Tokenize
-    encoded = tokenizer.encode(
-        combined_seq,
-        add_special_tokens=True,
-        max_length=max_length,
-        padding='max_length',
-        truncation=True,
-        return_tensors='pt'
-    )
+    # Ensure sequence length is multiple of 3 for codon tokenization
+    seq_len = len(combined_seq)
+    if seq_len % 3 != 0:
+        # Pad with 'N' to make length multiple of 3
+        padding_needed = 3 - (seq_len % 3)
+        combined_seq += 'N' * padding_needed
     
-    return {
-        'input_ids': encoded['input_ids'].squeeze(0),
-        'attention_mask': encoded['attention_mask'].squeeze(0)
-    }
+    try:
+        # Tokenize
+        encoded = tokenizer.encode(
+            combined_seq,
+            add_special_tokens=True,
+            max_length=max_length,
+            padding='max_length',
+            truncation=True,
+            return_tensors='pt'
+        )
+        
+        return {
+            'input_ids': encoded['input_ids'].squeeze(0),
+            'attention_mask': encoded['attention_mask'].squeeze(0)
+        }
+    except Exception as e:
+        # Fallback: use character-level tokenization
+        print(f"Codon tokenization failed: {e}")
+        print(f"Using character-level tokenization for sequence: {combined_seq[:50]}...")
+        
+        # Create simple character-level encoding
+        vocab = {'A': 1, 'U': 2, 'G': 3, 'C': 4, 'N': 5, '[SEP]': 6, '[PAD]': 0, '[CLS]': 7, '[UNK]': 8}
+        
+        # Add special tokens
+        tokens = ['[CLS]'] + list(combined_seq) + ['[SEP]']
+        
+        # Convert to IDs
+        input_ids = [vocab.get(token, vocab['[UNK]']) for token in tokens]
+        
+        # Pad or truncate to max_length
+        if len(input_ids) > max_length:
+            input_ids = input_ids[:max_length]
+        else:
+            input_ids.extend([vocab['[PAD]']] * (max_length - len(input_ids)))
+        
+        # Create attention mask
+        attention_mask = [1] * min(len(tokens), max_length)
+        if len(attention_mask) < max_length:
+            attention_mask.extend([0] * (max_length - len(attention_mask)))
+        
+        return {
+            'input_ids': torch.tensor(input_ids, dtype=torch.long),
+            'attention_mask': torch.tensor(attention_mask, dtype=torch.long)
+        }
 
 
 def create_kfold_splits(data_path: str, n_splits: int = 10, 

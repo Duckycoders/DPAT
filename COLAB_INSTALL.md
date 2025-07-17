@@ -36,7 +36,7 @@ import multimolecule  # 必不可少，否则类注册不到
 from transformers import AutoTokenizer, AutoModel
 
 # 测试加载
-model_id = "multimolecule/mrnafm"
+model_id = "multimolecule/rnafm"
 print(f"Testing model: {model_id}")
 
 try:
@@ -60,7 +60,7 @@ except Exception as e:
 成功的话，应该看到类似的日志：
 
 ```
-loading configuration file config.json from https://huggingface.co/multimolecule/mrnafm
+loading configuration file config.json from https://huggingface.co/multimolecule/rnafm
 Model config: RnaFmConfig {
   ...
 }

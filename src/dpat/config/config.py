@@ -47,7 +47,7 @@ class DPATConfig:
     log_dir: str = "runs"
     
     # RNA-BERT settings
-    rna_bert_model: str = "multimolecule/mrnafm"
+    rna_bert_model: str = "multimolecule/rnafm"
     max_bert_length: int = 512
     
     # Hardware
