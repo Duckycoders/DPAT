@@ -5,6 +5,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from typing import Tuple, Optional
+# 修复 multimolecule 和 datasets 的兼容性问题
+try:
+    import datasets
+    if not hasattr(datasets, 'disable_progress_bars'):
+        datasets.disable_progress_bars = datasets.disable_progress_bar
+except ImportError:
+    pass
+
 import multimolecule  # 必不可少，否则类注册不到
 from transformers import AutoModel
 

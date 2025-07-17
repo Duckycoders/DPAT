@@ -8,6 +8,14 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 import h5py
 import os
+# 修复 multimolecule 和 datasets 的兼容性问题
+try:
+    import datasets
+    if not hasattr(datasets, 'disable_progress_bars'):
+        datasets.disable_progress_bars = datasets.disable_progress_bar
+except ImportError:
+    pass
+
 import multimolecule  # 必不可少，否则类注册不到
 
 
