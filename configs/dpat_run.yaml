@@ -16,7 +16,7 @@ model:
     use_cbam: true
   
   semantic_config:
-    bert_model_name: "multimolecule/rnabert"
+    bert_model_name: "multimolecule/rna_fm_t12u10_b512_v2"
     bert_hidden_size: 768
     conv_hidden_size: 1024
     lstm_hidden_size: 128

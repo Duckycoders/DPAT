@@ -184,7 +184,7 @@ model:
     use_cbam: true
   
   semantic_config:
-    bert_model_name: "multimolecule/rnabert"
+    bert_model_name: "multimolecule/rna_fm_t12u10_b512_v2"
     lstm_hidden_size: 128
     proj_dim: 256
     freeze_bert: false

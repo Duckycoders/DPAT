@@ -10,7 +10,7 @@ import h5py
 import os
 
 
-def load_rna_bert_tokenizer(model_name: str = "multimolecule/rnabert"):
+def load_rna_bert_tokenizer(model_name: str = "multimolecule/rna_fm_t12u10_b512_v2"):
     """
     Load RNA-BERT tokenizer.
     
@@ -21,7 +21,10 @@ def load_rna_bert_tokenizer(model_name: str = "multimolecule/rnabert"):
         Tokenizer instance
     """
     try:
-        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_name,
+            trust_remote_code=True  # 必须！允许自定义类
+        )
         return tokenizer
     except Exception as e:
         print(f"Error loading tokenizer {model_name}: {e}")

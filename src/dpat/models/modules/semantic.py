@@ -187,7 +187,7 @@ class SemanticPath(nn.Module):
     """
     
     def __init__(self,
-                 bert_model_name: str = "multimolecule/rnabert",
+                 bert_model_name: str = "multimolecule/rna_fm_t12u10_b512_v2",
                  bert_hidden_size: int = 768,
                  conv_hidden_size: int = 1024,
                  lstm_hidden_size: int = 128,
@@ -206,7 +206,10 @@ class SemanticPath(nn.Module):
         
         # Load pre-trained RNA-BERT model
         try:
-            self.bert_model = AutoModel.from_pretrained(bert_model_name)
+            self.bert_model = AutoModel.from_pretrained(
+                bert_model_name,
+                trust_remote_code=True  # 必须！允许自定义类
+            )
             self.bert_hidden_size = self.bert_model.config.hidden_size
         except Exception as e:
             print(f"Error loading BERT model {bert_model_name}: {e}")
