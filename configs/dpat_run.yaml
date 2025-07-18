@@ -57,6 +57,20 @@ training_settings:
   use_amp: true
   accumulate_grad_batches: 2   # 增加梯度累积从1到2
   
+# 学习率调度策略
+lr_scheduler:
+  type: "ReduceLROnPlateau"
+  factor: 0.1                  # 学习率衰减因子
+  patience: 3                  # 连续多少epoch不提升就降低学习率
+  threshold: 0.001             # 认为提升的最小阈值
+  cooldown: 1                  # 降低学习率后等待的epoch数
+  min_lr: 1e-7                 # 最小学习率
+
+# 类别平衡策略
+class_balance:
+  use_class_weights: true      # 使用类别权重
+  threshold_optimization: true # 启用阈值优化
+  
 # Paths
 paths:
   checkpoint_dir: "checkpoints"

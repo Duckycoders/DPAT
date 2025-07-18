@@ -19,6 +19,24 @@ from src.dpat.data.dataset import create_dataloaders
 from src.dpat.models.modules.utils import apply_gradient_clipping
 from src.dpat.utils.metrics import compute_metrics
 from src.dpat.utils.logger import setup_logger
+import numpy as np
+from sklearn.metrics import f1_score
+
+
+def find_optimal_threshold(y_true, y_probs):
+    """Find optimal threshold for F1 score."""
+    best_threshold = 0.5
+    best_f1 = 0.0
+    
+    # 在0.1到0.9范围内搜索最优阈值
+    for threshold in np.linspace(0.1, 0.9, 17):
+        y_pred = (y_probs >= threshold).astype(int)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        if f1 > best_f1:
+            best_f1 = f1
+            best_threshold = threshold
+    
+    return best_threshold, best_f1
 
 
 def parse_args():
@@ -77,12 +95,17 @@ def create_optimizer(model, config):
 
 
 def create_scheduler(optimizer, config, total_steps):
-    """Create learning rate scheduler."""
-    scheduler = optim.lr_scheduler.LinearLR(
+    """Create learning rate scheduler with ReduceLROnPlateau."""
+    # 使用ReduceLROnPlateau来突破性能平台期
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        start_factor=0.1,
-        end_factor=1.0,
-        total_iters=config['training']['warmup_steps']
+        mode='max',           # 监控指标越大越好（F1 score）
+        factor=0.1,           # 学习率衰减因子
+        patience=3,           # 连续3个epoch不提升就降低学习率
+        verbose=True,         # 打印学习率变化信息
+        threshold=0.001,      # 认为提升的最小阈值
+        cooldown=1,           # 降低学习率后等待的epoch数
+        min_lr=1e-7          # 最小学习率
     )
     
     return scheduler
@@ -101,7 +124,21 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
     f1 = torchmetrics.F1Score(task='binary').to(device)
     auroc = torchmetrics.AUROC(task='binary').to(device)
     
-    criterion = nn.BCEWithLogitsLoss()
+    # 计算类别权重来处理不平衡问题
+    # 从数据集中获取类别分布
+    class_counts = train_dataset.get_class_distribution()
+    total_samples = sum(class_counts.values())
+    
+    # 计算正类权重（正类样本较少时权重较大）
+    if 1 in class_counts and 0 in class_counts:
+        pos_weight = class_counts[0] / class_counts[1]  # 负类数量 / 正类数量
+        pos_weight = torch.tensor([pos_weight], dtype=torch.float32).to(device)
+        logging.info(f"Class distribution: {class_counts}")
+        logging.info(f"Positive class weight: {pos_weight.item():.3f}")
+    else:
+        pos_weight = None
+    
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     
     accumulate_grad_batches = config['training_settings'].get('accumulate_grad_batches', 1)
     
@@ -132,7 +169,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
             # Optimizer step
             scaler.step(optimizer)
             scaler.update()
-            scheduler.step()
+            # 注意：ReduceLROnPlateau在每个epoch结束后调用，不是每个batch
             optimizer.zero_grad()
         
         # Update metrics (使用原始loss而不是缩放后的loss)
@@ -161,7 +198,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
         # Optimizer step
         scaler.step(optimizer)
         scaler.update()
-        scheduler.step()
+        # 注意：ReduceLROnPlateau在每个epoch结束后调用，不是每个batch
         optimizer.zero_grad()
     
     # Compute epoch metrics
@@ -190,7 +227,15 @@ def validate(model, val_loader, config, device):
     f1 = torchmetrics.F1Score(task='binary').to(device)
     auroc = torchmetrics.AUROC(task='binary').to(device)
     
-    criterion = nn.BCEWithLogitsLoss()
+    # 验证时也使用相同的类别权重
+    class_counts = val_dataset.get_class_distribution()
+    if 1 in class_counts and 0 in class_counts:
+        pos_weight = class_counts[0] / class_counts[1]
+        pos_weight = torch.tensor([pos_weight], dtype=torch.float32).to(device)
+    else:
+        pos_weight = None
+    
+    criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     
     with torch.no_grad():
         for batch in tqdm(val_loader, desc="Validation"):
@@ -215,8 +260,8 @@ def validate(model, val_loader, config, device):
             total_loss += loss.item()
             num_batches += 1
     
-    # Compute validation metrics
-    val_metrics = {
+    # 计算基础验证指标
+    basic_val_metrics = {
         'loss': total_loss / num_batches,
         'accuracy': accuracy.compute().item(),
         'precision': precision.compute().item(),
@@ -224,6 +269,16 @@ def validate(model, val_loader, config, device):
         'f1': f1.compute().item(),
         'auroc': auroc.compute().item()
     }
+    
+    # 寻找最优阈值
+    all_preds_np = np.array(all_preds)
+    all_labels_np = np.array(all_labels)
+    optimal_threshold, optimal_f1 = find_optimal_threshold(all_labels_np, all_preds_np)
+    
+    # 更新验证指标
+    val_metrics = basic_val_metrics.copy()
+    val_metrics['optimal_threshold'] = optimal_threshold
+    val_metrics['optimal_f1'] = optimal_f1
     
     return val_metrics
 
@@ -313,9 +368,19 @@ def main():
         logging.info(f"Epoch {epoch} - Train: {train_metrics}")
         logging.info(f"Epoch {epoch} - Val: {val_metrics}")
         
-        # Save best model
-        if val_metrics['f1'] > best_val_f1:
-            best_val_f1 = val_metrics['f1']
+        # 显示最优阈值信息
+        if 'optimal_threshold' in val_metrics:
+            logging.info(f"Optimal threshold: {val_metrics['optimal_threshold']:.3f}, "
+                        f"Optimal F1: {val_metrics['optimal_f1']:.4f}")
+        
+        # 基于验证集F1调整学习率（使用最优F1）
+        f1_score_for_scheduler = val_metrics.get('optimal_f1', val_metrics['f1'])
+        scheduler.step(f1_score_for_scheduler)
+        
+        # Save best model (使用最优F1)
+        current_f1 = val_metrics.get('optimal_f1', val_metrics['f1'])
+        if current_f1 > best_val_f1:
+            best_val_f1 = current_f1
             patience_counter = 0
             
             # Save checkpoint
@@ -328,11 +393,12 @@ def main():
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'scheduler_state_dict': scheduler.state_dict(),
-                'val_f1': val_metrics['f1'],
+                'val_f1': current_f1,
+                'optimal_threshold': val_metrics.get('optimal_threshold', 0.5),
                 'config': config
             }, checkpoint_path)
             
-            logging.info(f"New best model saved with val F1: {best_val_f1:.4f}")
+            logging.info(f"New best model saved with optimal F1: {best_val_f1:.4f}")
         else:
             patience_counter += 1
         
