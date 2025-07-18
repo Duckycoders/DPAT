@@ -111,7 +111,7 @@ def create_scheduler(optimizer, config, total_steps):
     return scheduler
 
 
-def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, device, epoch):
+def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, device, epoch, train_dataset):
     """Train for one epoch."""
     model.train()
     total_loss = 0
@@ -214,7 +214,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
     return epoch_metrics
 
 
-def validate(model, val_loader, config, device):
+def validate(model, val_loader, config, device, val_dataset):
     """Validate the model."""
     model.eval()
     total_loss = 0
@@ -358,11 +358,11 @@ def main():
     for epoch in range(config['training']['num_epochs']):
         # Train
         train_metrics = train_epoch(
-            model, train_loader, optimizer, scheduler, scaler, config, device, epoch
+            model, train_loader, optimizer, scheduler, scaler, config, device, epoch, train_dataset
         )
         
         # Validate
-        val_metrics = validate(model, val_loader, config, device)
+        val_metrics = validate(model, val_loader, config, device, val_dataset)
         
         # Log metrics
         logging.info(f"Epoch {epoch} - Train: {train_metrics}")
