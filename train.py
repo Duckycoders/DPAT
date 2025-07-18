@@ -227,6 +227,10 @@ def validate(model, val_loader, config, device, val_dataset):
     f1 = torchmetrics.F1Score(task='binary').to(device)
     auroc = torchmetrics.AUROC(task='binary').to(device)
     
+    # 收集所有预测和标签用于阈值优化
+    all_preds = []
+    all_labels = []
+    
     # 验证时也使用相同的类别权重
     class_counts = val_dataset.get_class_distribution()
     if 1 in class_counts and 0 in class_counts:
@@ -256,6 +260,10 @@ def validate(model, val_loader, config, device, val_dataset):
             recall.update(probs, labels.int())
             f1.update(probs, labels.int())
             auroc.update(probs, labels.int())
+            
+            # 收集预测概率和标签
+            all_preds.extend(probs.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
             
             total_loss += loss.item()
             num_batches += 1
