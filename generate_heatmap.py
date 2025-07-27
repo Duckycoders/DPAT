@@ -237,6 +237,29 @@ class DPATFullPipeline:
             trainer_config = SimpleNamespace()
             trainer_config.training = SimpleNamespace()
             trainer_config.data = SimpleNamespace()
+            # 为trainer提供模型配置（避免重复初始化，但trainer需要这个属性）
+            dropout = self.config['model'].get('dropout', 0.1)
+            
+            # 复制模型配置并添加dropout
+            alignment_config = self.config['model']['alignment_config'].copy()
+            semantic_config = self.config['model']['semantic_config'].copy()
+            fusion_config = self.config['model']['fusion_config'].copy()
+            
+            alignment_config['dropout'] = dropout
+            semantic_config['dropout'] = dropout
+            fusion_config['dropout'] = dropout
+            
+            trainer_config.model = {
+                'alignment_config': alignment_config,
+                'semantic_config': semantic_config, 
+                'fusion_config': fusion_config,
+                'num_classes': self.config['model'].get('num_classes', 1),
+                'dropout': dropout,
+                'use_simple_semantic': self.config['model'].get('use_simple_semantic', False)
+            }
+            
+            # 顶级配置属性（DPATTrainer直接访问的）
+            trainer_config.mixed_precision = self.config['training_settings']['use_amp']
             
             # Training配置
             trainer_config.training.epochs = self.config['training']['num_epochs']
@@ -253,6 +276,7 @@ class DPATFullPipeline:
             # 添加data_processing字段到data配置中
             for key, value in self.config['data_processing'].items():
                 setattr(trainer_config.data, key, value)
+            
             self.trainer = DPATTrainer(trainer_config)
             
             # 替换trainer的模型和数据加载器为我们已经创建的
@@ -288,7 +312,7 @@ class DPATFullPipeline:
                 if not self.setup_trainer():
                     return False, None
             
-            epochs = epochs or self.config['training']['epochs']
+            epochs = epochs or self.config['training']['num_epochs']
             
             logger.info(f"开始训练，训练轮数: {epochs}")
             
@@ -296,7 +320,14 @@ class DPATFullPipeline:
             self.trainer.config.training.epochs = epochs
             
             # 执行训练
-            training_history = self.trainer.train()
+            self.trainer.train()
+            
+            # 创建简单的训练历史记录
+            training_history = {
+                'epochs': epochs,
+                'final_step': self.trainer.global_step,
+                'best_score': self.trainer.best_score
+            }
             
             # 保存模型
             torch.save({
@@ -354,20 +385,19 @@ class DPATFullPipeline:
             batch = self._prepare_batch(sample_data)
             
             # 获取模型输出和注意力权重
-            outputs = self.model(
-                alignment_matrix=batch['alignment_matrix'],
-                input_ids=batch['input_ids'],
-                attention_mask=batch['attention_mask'],
+            logits, fused_features = self.model(
+                align_matrix=batch['align_matrix'],
+                bert_input_ids=batch['bert_input_ids'],
+                bert_attention_mask=batch['bert_attention_mask'],
                 return_attention=True
             )
             
-            # 提取注意力权重
+            # 构造注意力权重字典
             attention_weights = {
-                'cross_attention': outputs.get('attention_weights', {}),
-                'alignment_features': outputs['alignment_features'],
-                'semantic_features': outputs['semantic_features'],
-                'fused_features': outputs['fused_features'],
-                'predictions': outputs['logits']
+                'cross_attention': {
+                    'fused_features': fused_features
+                },
+                'predictions': logits
             }
             
             return attention_weights
@@ -421,9 +451,9 @@ class DPATFullPipeline:
         attention_mask = torch.ones(512, dtype=torch.long)
         
         batch = {
-            'alignment_matrix': alignment_matrix.unsqueeze(0).to(self.device),
-            'input_ids': input_ids.unsqueeze(0).to(self.device),
-            'attention_mask': attention_mask.unsqueeze(0).to(self.device)
+            'align_matrix': alignment_matrix.unsqueeze(0).to(self.device),
+            'bert_input_ids': input_ids.unsqueeze(0).to(self.device),
+            'bert_attention_mask': attention_mask.unsqueeze(0).to(self.device)
         }
         
         return batch
