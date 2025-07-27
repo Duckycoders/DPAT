@@ -41,6 +41,7 @@ try:
     from src.dpat.training.trainer import DPATTrainer
     from src.dpat.utils.metrics import compute_metrics
     from src.dpat.utils.logger import setup_logger
+    import torch.utils.data
     print("✅ Successfully imported existing DPAT modules")
 except ImportError as e:
     print(f"⚠️ Failed to import DPAT modules: {e}")
@@ -146,14 +147,40 @@ class DPATFullPipeline:
             
             train_path = self.data_path or self.config['data']['train_data_path']
             
+            # 创建数据集对象
+            from src.dpat.data.utils import load_rna_bert_tokenizer
+            tokenizer = load_rna_bert_tokenizer()
+            
+            # 创建训练和验证数据集
+            train_dataset = DPATDataset(
+                data_path=train_path,
+                tokenizer=tokenizer,
+                split='train',
+                window_size=self.config.get('data_processing', {}).get('window_size', 40),
+                seed_length=self.config.get('data_processing', {}).get('seed_length', 12),
+                alignment_threshold=self.config.get('data_processing', {}).get('alignment_threshold', 4),
+                max_length=self.config.get('data_processing', {}).get('max_length', 50),
+                max_bert_length=self.config.get('data_processing', {}).get('max_bert_length', 512),
+                cache_dir=self.config.get('data', {}).get('cache_dir', 'cache')
+            )
+            
+            # 将训练数据集分为训练和验证
+            train_size = int(0.8 * len(train_dataset))
+            val_size = len(train_dataset) - train_size
+            train_dataset, val_dataset = torch.utils.data.random_split(
+                train_dataset, [train_size, val_size]
+            )
+            
             # 创建数据加载器
             self.train_loader, self.val_loader = create_dataloaders(
-                train_file=train_path,
+                train_dataset=train_dataset,
+                val_dataset=val_dataset,
                 batch_size=batch_size,
-                num_workers=2
+                num_workers=0  # Colab环境使用0个worker
             )
             
             logger.info(f"数据加载器创建成功，批次大小: {batch_size}")
+            logger.info(f"训练样本数: {len(train_dataset)}, 验证样本数: {len(val_dataset)}")
             return True
         
         except Exception as e:
@@ -219,11 +246,11 @@ class DPATFullPipeline:
             if self.trainer is None:
                 logger.info("训练器未初始化，正在自动初始化...")
                 if not self.setup_data():
-                    return False
+                    return False, None
                 if not self.setup_model():
-                    return False
+                    return False, None
                 if not self.setup_trainer():
-                    return False
+                    return False, None
             
             epochs = epochs or self.config['training']['epochs']
             
