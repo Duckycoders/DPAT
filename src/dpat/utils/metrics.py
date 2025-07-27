@@ -1,5 +1,5 @@
 """
-评估指标计算函数
+Evaluation metrics computation functions
 """
 import torch
 import numpy as np
@@ -9,23 +9,23 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 
 def compute_metrics(predictions: Union[torch.Tensor, np.ndarray], 
                    labels: Union[torch.Tensor, np.ndarray]) -> Dict[str, float]:
-    """计算二分类评估指标"""
-    # 转换为numpy
+    """Compute binary classification evaluation metrics"""
+    # Convert to numpy
     if isinstance(predictions, torch.Tensor):
         predictions = predictions.detach().cpu().numpy()
     if isinstance(labels, torch.Tensor):
         labels = labels.detach().cpu().numpy()
     
-    # 二分类预测
+    # Binary classification predictions
     pred_labels = (predictions > 0.5).astype(int)
     
-    # 计算指标
+    # Compute metrics
     accuracy = accuracy_score(labels, pred_labels)
     precision = precision_score(labels, pred_labels, zero_division=0)
     recall = recall_score(labels, pred_labels, zero_division=0)
     f1 = f1_score(labels, pred_labels, zero_division=0)
     
-    # 计算AUC
+    # Compute AUC
     try:
         auc = roc_auc_score(labels, predictions)
     except:
@@ -41,8 +41,8 @@ def compute_metrics(predictions: Union[torch.Tensor, np.ndarray],
 
 
 def compute_batch_metrics(outputs: torch.Tensor, labels: torch.Tensor) -> Dict[str, float]:
-    """计算batch级别的指标"""
-    # 应用sigmoid
+    """Compute batch-level metrics"""
+    # Apply sigmoid
     predictions = torch.sigmoid(outputs)
     
     return compute_metrics(predictions, labels) 

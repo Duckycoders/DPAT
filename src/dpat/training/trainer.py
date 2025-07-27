@@ -1,5 +1,5 @@
 """
-DPAT训练器
+DPAT Trainer
 """
 import torch
 import torch.nn as nn
@@ -17,34 +17,34 @@ logger = logging.getLogger(__name__)
 
 
 class DPATTrainer:
-    """DPAT训练器"""
+    """DPAT Trainer"""
     
     def __init__(self, config: DPATConfig):
         self.config = config
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.scaler = GradScaler() if config.mixed_precision else None
         
-        # 初始化模型
+        # Initialize model
         self.model = DPAT(config.model)
         self.model.to(self.device)
         
-        # 初始化优化器
+        # Initialize optimizer
         self._setup_optimizer()
         
-        # 初始化损失函数
+        # Initialize loss function
         self.criterion = nn.BCEWithLogitsLoss()
         
-        # 初始化数据加载器
+        # Initialize data loaders
         self._setup_data_loaders()
         
-        # 训练状态
+        # Training state
         self.global_step = 0
         self.epoch = 0
         self.best_score = 0.0
         
     def _setup_optimizer(self):
-        """设置优化器"""
-        # 不同学习率：BERT参数使用1e-5，其他参数使用1e-3
+        """Setup optimizer"""
+        # Different learning rates: BERT parameters use 1e-5, other parameters use 1e-3
         bert_params = []
         other_params = []
         
@@ -60,8 +60,8 @@ class DPATTrainer:
         ], weight_decay=self.config.training.weight_decay)
         
     def _setup_data_loaders(self):
-        """设置数据加载器"""
-        # 训练集
+        """Setup data loaders"""
+        # Training set
         train_dataset = DPATDataset(
             self.config.data.train_data_path,
             self.config.data,
@@ -71,12 +71,12 @@ class DPATTrainer:
         self.train_loader = DataLoader(
             train_dataset,
             batch_size=self.config.training.batch_size,
-            shuffle=False,  # 保持原始顺序
+            shuffle=False,  # Keep original order
             num_workers=self.config.training.num_workers,
             pin_memory=True
         )
         
-        # 验证集
+        # Validation set
         val_dataset = DPATDataset(
             self.config.data.train_data_path,
             self.config.data,
@@ -92,16 +92,16 @@ class DPATTrainer:
         )
         
     def train_step(self, batch: Dict[str, torch.Tensor]) -> Dict[str, float]:
-        """训练一个batch"""
+        """Train one batch"""
         self.model.train()
         
-        # 移动数据到设备
+        # Move data to device
         align_matrix = batch['align_matrix'].to(self.device)
         input_ids = batch['input_ids'].to(self.device)
         attention_mask = batch['attention_mask'].to(self.device)
         labels = batch['label'].to(self.device).float()
         
-        # 前向传播
+        # Forward pass
         if self.config.training.mixed_precision:
             with autocast():
                 outputs = self.model(align_matrix, input_ids, attention_mask)
@@ -110,7 +110,7 @@ class DPATTrainer:
             outputs = self.model(align_matrix, input_ids, attention_mask)
             loss = self.criterion(outputs.squeeze(), labels)
         
-        # 反向传播
+        # Backward pass
         self.optimizer.zero_grad()
         
         if self.config.training.mixed_precision:
@@ -127,7 +127,7 @@ class DPATTrainer:
         return {'loss': loss.item()}
     
     def validate(self) -> Dict[str, float]:
-        """验证"""
+        """Validation"""
         self.model.eval()
         total_loss = 0.0
         all_preds = []
@@ -145,18 +145,18 @@ class DPATTrainer:
                 
                 total_loss += loss.item()
                 
-                # 收集预测和标签
+                # Collect predictions and labels
                 preds = torch.sigmoid(outputs.squeeze())
                 all_preds.extend(preds.cpu().numpy())
                 all_labels.extend(labels.cpu().numpy())
         
         avg_loss = total_loss / len(self.val_loader)
         
-        # 计算指标
+        # Calculate metrics
         all_preds = torch.tensor(all_preds)
         all_labels = torch.tensor(all_labels)
         
-        # 简单的二分类指标
+        # Simple binary classification metrics
         pred_labels = (all_preds > 0.5).float()
         accuracy = (pred_labels == all_labels).float().mean().item()
         
@@ -166,7 +166,7 @@ class DPATTrainer:
         }
     
     def train(self, max_steps: Optional[int] = None):
-        """训练主循环"""
+        """Main training loop"""
         logger.info(f"Starting training on {self.device}")
         
         step_count = 0
@@ -174,28 +174,28 @@ class DPATTrainer:
         for epoch in range(self.config.training.epochs):
             self.epoch = epoch
             
-            # 训练循环
+            # Training loop
             pbar = tqdm(self.train_loader, desc=f"Epoch {epoch}")
             for batch in pbar:
-                # 训练步骤
+                # Training step
                 train_metrics = self.train_step(batch)
                 
-                # 更新进度条
+                # Update progress bar
                 pbar.set_postfix(train_metrics)
                 
                 self.global_step += 1
                 step_count += 1
                 
-                # 检查是否达到最大步数
+                # Check if max_steps reached
                 if max_steps and step_count >= max_steps:
                     logger.info(f"Reached max_steps ({max_steps}), stopping training")
                     return
             
-            # 验证
+            # Validation
             val_metrics = self.validate()
             logger.info(f"Epoch {epoch}: {val_metrics}")
             
-            # 早停检查
+            # Early stopping check
             if val_metrics['val_accuracy'] > self.best_score:
                 self.best_score = val_metrics['val_accuracy']
                 self.save_checkpoint('best.pt')
@@ -203,7 +203,7 @@ class DPATTrainer:
         logger.info("Training completed")
     
     def save_checkpoint(self, filename: str):
-        """保存检查点"""
+        """Save checkpoint"""
         checkpoint = {
             'epoch': self.epoch,
             'global_step': self.global_step,

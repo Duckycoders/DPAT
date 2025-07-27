@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pack_padded_sequence, pad_packed_sequence
 from typing import Tuple, Optional
-# 修复 multimolecule 和 datasets 的兼容性问题
+# Fix compatibility issues between multimolecule and datasets
 try:
     import datasets
     if not hasattr(datasets, 'disable_progress_bars'):
@@ -13,7 +13,7 @@ try:
 except ImportError:
     pass
 
-import multimolecule  # 必不可少，否则类注册不到
+import multimolecule  # Essential, otherwise classes won't be registered
 from transformers import AutoModel
 
 from .utils import init_weights
@@ -217,7 +217,7 @@ class SemanticPath(nn.Module):
         try:
             self.bert_model = AutoModel.from_pretrained(
                 bert_model_name,
-                trust_remote_code=True  # 必须！允许自定义类
+                trust_remote_code=True  # Required! Allow custom classes
             )
             self.bert_hidden_size = self.bert_model.config.hidden_size
         except Exception as e:

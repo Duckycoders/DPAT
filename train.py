@@ -28,7 +28,7 @@ def find_optimal_threshold(y_true, y_probs):
     best_threshold = 0.5
     best_f1 = 0.0
     
-    # 在0.1到0.9范围内搜索最优阈值
+    # Search for optimal threshold in range 0.1 to 0.9
     for threshold in np.linspace(0.1, 0.9, 17):
         y_pred = (y_probs >= threshold).astype(int)
         f1 = f1_score(y_true, y_pred, zero_division=0)
@@ -96,16 +96,16 @@ def create_optimizer(model, config):
 
 def create_scheduler(optimizer, config, total_steps):
     """Create learning rate scheduler with ReduceLROnPlateau."""
-    # 使用ReduceLROnPlateau来突破性能平台期
+    # Use ReduceLROnPlateau to break through performance plateaus
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer,
-        mode='max',           # 监控指标越大越好（F1 score）
-        factor=0.1,           # 学习率衰减因子
-        patience=3,           # 连续3个epoch不提升就降低学习率
-        verbose=True,         # 打印学习率变化信息
-        threshold=0.001,      # 认为提升的最小阈值
-        cooldown=1,           # 降低学习率后等待的epoch数
-        min_lr=1e-7          # 最小学习率
+        mode='max',           # Monitor metric should be maximized (F1 score)
+        factor=0.1,           # Learning rate decay factor
+        patience=3,           # Reduce LR after 3 epochs without improvement
+        verbose=True,         # Print learning rate change information
+        threshold=0.001,      # Minimum threshold for considering improvement
+        cooldown=1,           # Number of epochs to wait after reducing LR
+        min_lr=1e-7          # Minimum learning rate
     )
     
     return scheduler
@@ -124,14 +124,14 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
     f1 = torchmetrics.F1Score(task='binary').to(device)
     auroc = torchmetrics.AUROC(task='binary').to(device)
     
-    # 计算类别权重来处理不平衡问题
-    # 从数据集中获取类别分布
+    # Calculate class weights to handle imbalanced dataset
+    # Get class distribution from dataset
     class_counts = train_dataset.get_class_distribution()
     total_samples = sum(class_counts.values())
     
-    # 计算正类权重（正类样本较少时权重较大）
+    # Calculate positive class weight (higher weight when positive samples are fewer)
     if 1 in class_counts and 0 in class_counts:
-        pos_weight = class_counts[0] / class_counts[1]  # 负类数量 / 正类数量
+        pos_weight = class_counts[0] / class_counts[1]  # negative samples / positive samples
         pos_weight = torch.tensor([pos_weight], dtype=torch.float32).to(device)
         logging.info(f"Class distribution: {class_counts}")
         logging.info(f"Positive class weight: {pos_weight.item():.3f}")
@@ -153,13 +153,13 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
         with autocast(enabled=config['training_settings']['use_amp']):
             logits = model(align_matrix, bert_input_ids, bert_attention_mask)
             loss = criterion(logits.squeeze(), labels)
-            # 梯度累积：除以累积步数
+            # Gradient accumulation: divide by accumulation steps
             loss = loss / accumulate_grad_batches
         
         # Backward pass
         scaler.scale(loss).backward()
         
-        # 只在累积步数达到后更新参数
+        # Update parameters only when accumulation steps are reached
         if (batch_idx + 1) % accumulate_grad_batches == 0:
             # Gradient clipping
             if config['training']['max_grad_norm'] > 0:
@@ -169,10 +169,10 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
             # Optimizer step
             scaler.step(optimizer)
             scaler.update()
-            # 注意：ReduceLROnPlateau在每个epoch结束后调用，不是每个batch
+            # Note: ReduceLROnPlateau is called at the end of each epoch, not each batch
             optimizer.zero_grad()
         
-        # Update metrics (使用原始loss而不是缩放后的loss)
+        # Update metrics (use original loss instead of scaled loss)
         actual_loss = loss.item() * accumulate_grad_batches
         probs = torch.sigmoid(logits.squeeze())
         accuracy.update(probs, labels.int())
@@ -188,7 +188,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
         if batch_idx % config['logging']['log_every_n_steps'] == 0:
             logging.info(f"Epoch {epoch}, Batch {batch_idx}, Loss: {actual_loss:.4f}")
     
-    # 处理epoch结束时的剩余梯度
+    # Handle remaining gradients at the end of epoch
     if len(train_loader) % accumulate_grad_batches != 0:
         # Gradient clipping
         if config['training']['max_grad_norm'] > 0:
@@ -198,7 +198,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, config, devic
         # Optimizer step
         scaler.step(optimizer)
         scaler.update()
-        # 注意：ReduceLROnPlateau在每个epoch结束后调用，不是每个batch
+        # Note: ReduceLROnPlateau is called at the end of each epoch, not each batch
         optimizer.zero_grad()
     
     # Compute epoch metrics
@@ -227,11 +227,11 @@ def validate(model, val_loader, config, device, val_dataset):
     f1 = torchmetrics.F1Score(task='binary').to(device)
     auroc = torchmetrics.AUROC(task='binary').to(device)
     
-    # 收集所有预测和标签用于阈值优化
+    # Collect all predictions and labels for threshold optimization
     all_preds = []
     all_labels = []
     
-    # 验证时也使用相同的类别权重
+    # Use the same class weights during validation
     class_counts = val_dataset.get_class_distribution()
     if 1 in class_counts and 0 in class_counts:
         pos_weight = class_counts[0] / class_counts[1]
@@ -261,14 +261,14 @@ def validate(model, val_loader, config, device, val_dataset):
             f1.update(probs, labels.int())
             auroc.update(probs, labels.int())
             
-            # 收集预测概率和标签
+            # Collect prediction probabilities and labels
             all_preds.extend(probs.cpu().numpy())
             all_labels.extend(labels.cpu().numpy())
             
             total_loss += loss.item()
             num_batches += 1
     
-    # 计算基础验证指标
+    # Calculate basic validation metrics
     basic_val_metrics = {
         'loss': total_loss / num_batches,
         'accuracy': accuracy.compute().item(),
@@ -278,12 +278,12 @@ def validate(model, val_loader, config, device, val_dataset):
         'auroc': auroc.compute().item()
     }
     
-    # 寻找最优阈值
+    # Find optimal threshold
     all_preds_np = np.array(all_preds)
     all_labels_np = np.array(all_labels)
     optimal_threshold, optimal_f1 = find_optimal_threshold(all_labels_np, all_preds_np)
     
-    # 更新验证指标
+    # Update validation metrics
     val_metrics = basic_val_metrics.copy()
     val_metrics['optimal_threshold'] = optimal_threshold
     val_metrics['optimal_f1'] = optimal_f1
@@ -376,16 +376,16 @@ def main():
         logging.info(f"Epoch {epoch} - Train: {train_metrics}")
         logging.info(f"Epoch {epoch} - Val: {val_metrics}")
         
-        # 显示最优阈值信息
+        # Display optimal threshold information
         if 'optimal_threshold' in val_metrics:
             logging.info(f"Optimal threshold: {val_metrics['optimal_threshold']:.3f}, "
                         f"Optimal F1: {val_metrics['optimal_f1']:.4f}")
         
-        # 基于验证集F1调整学习率（使用最优F1）
+        # Adjust learning rate based on validation F1 (use optimal F1)
         f1_score_for_scheduler = val_metrics.get('optimal_f1', val_metrics['f1'])
         scheduler.step(f1_score_for_scheduler)
         
-        # Save best model (使用最优F1)
+        # Save best model (use optimal F1)
         current_f1 = val_metrics.get('optimal_f1', val_metrics['f1'])
         if current_f1 > best_val_f1:
             best_val_f1 = current_f1

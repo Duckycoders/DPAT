@@ -1,5 +1,5 @@
 """
-训练工具函数
+Training utility functions
 """
 import torch
 import torch.nn as nn
@@ -9,8 +9,8 @@ from typing import Dict, Any
 
 
 def get_optimizer(model: nn.Module, config: Dict[str, Any]) -> torch.optim.Optimizer:
-    """获取优化器"""
-    # 不同学习率：BERT参数使用1e-5，其他参数使用1e-3
+    """Get optimizer"""
+    # Different learning rates: BERT parameters use 1e-5, other parameters use 1e-3
     bert_params = []
     other_params = []
     
@@ -29,7 +29,7 @@ def get_optimizer(model: nn.Module, config: Dict[str, Any]) -> torch.optim.Optim
 
 
 def get_scheduler(optimizer: torch.optim.Optimizer, config: Dict[str, Any]):
-    """获取学习率调度器"""
+    """Get learning rate scheduler"""
     total_steps = config.get('total_steps', 1000)
     warmup_steps = config.get('warmup_steps', 100)
     
@@ -42,14 +42,14 @@ def get_scheduler(optimizer: torch.optim.Optimizer, config: Dict[str, Any]):
 
 
 def compute_metrics(predictions: torch.Tensor, labels: torch.Tensor) -> Dict[str, float]:
-    """计算评估指标"""
-    # 二分类指标
+    """Compute evaluation metrics"""
+    # Binary classification metrics
     pred_labels = (predictions > 0.5).float()
     
-    # 计算准确率
+    # Calculate accuracy
     accuracy = (pred_labels == labels).float().mean().item()
     
-    # 计算精确率和召回率
+    # Calculate precision and recall
     tp = ((pred_labels == 1) & (labels == 1)).float().sum().item()
     fp = ((pred_labels == 1) & (labels == 0)).float().sum().item()
     fn = ((pred_labels == 0) & (labels == 1)).float().sum().item()

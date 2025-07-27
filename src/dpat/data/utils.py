@@ -8,7 +8,7 @@ import pandas as pd
 from sklearn.model_selection import StratifiedKFold
 import h5py
 import os
-# 修复 multimolecule 和 datasets 的兼容性问题
+# Fix compatibility issues between multimolecule and datasets
 try:
     import datasets
     if not hasattr(datasets, 'disable_progress_bars'):
@@ -16,7 +16,7 @@ try:
 except ImportError:
     pass
 
-import multimolecule  # 必不可少，否则类注册不到
+import multimolecule  # Essential, otherwise classes won't be registered
 
 
 def load_rna_bert_tokenizer(model_name: str = "multimolecule/rnafm"):
