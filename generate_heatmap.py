@@ -190,44 +190,25 @@ class DPATFullPipeline:
     def setup_model(self):
         """设置DPAT模型"""
         try:
-            # 映射配置文件字段到DPATConfig参数
-            dpat_config_params = {
-                'train_data_path': self.config['data']['train_data_path'],
-                'batch_size': self.config['training']['batch_size'],
-                'learning_rate': self.config['training']['learning_rate'],
-                'bert_learning_rate': self.config['training']['bert_learning_rate'],
-                'num_epochs': self.config['training']['num_epochs'],
-                'warmup_steps': self.config['training']['warmup_steps'],
-                'max_grad_norm': self.config['training']['max_grad_norm'],
-                'window_size': self.config['data_processing']['window_size'],
-                'seed_length': self.config['data_processing']['seed_length'],
-                'alignment_threshold': self.config['data_processing']['alignment_threshold'],
-                'max_seq_length': self.config['data_processing']['max_length'],
-                'max_bert_length': self.config['data_processing']['max_bert_length'],
-                'early_stopping_patience': self.config['training_settings']['early_stopping_patience'],
-                'save_top_k': self.config['training_settings']['save_top_k'],
-                'use_amp': self.config['training_settings']['use_amp'],
-                'accumulate_grad_batches': self.config['training_settings']['accumulate_grad_batches'],
-                'checkpoint_dir': self.config['paths']['checkpoint_dir'],
-                'log_dir': self.config['paths']['log_dir'],
-                'num_workers': self.config['hardware']['num_workers'],
-                'pin_memory': self.config['hardware']['pin_memory'],
-                'log_every_n_steps': self.config['logging']['log_every_n_steps'],
-                'val_check_interval': self.config['logging']['val_check_interval'],
-                'seed': self.config['seed'],
-                'dropout': self.config['model'].get('dropout', 0.1),
-                'align_channels': self.config['model']['alignment_config'].get('output_channels', 256),
-                'semantic_channels': self.config['model']['semantic_config'].get('proj_dim', 256),
-                'proj_dim': self.config['model']['fusion_config'].get('embed_dim', 256),
-                'num_heads': self.config['model']['fusion_config'].get('num_heads', 8),
-                'lstm_dim': self.config['model']['semantic_config'].get('lstm_hidden_size', 128),
-                'rna_bert_model': self.config['model']['semantic_config'].get('bert_model_name', 'multimolecule/rnafm'),
-            }
+            # 直接使用配置文件中的字典格式
+            alignment_config = self.config['model']['alignment_config']
+            semantic_config = self.config['model']['semantic_config']
+            fusion_config = self.config['model']['fusion_config']
             
-            # 创建DPATConfig对象
-            config = DPATConfig(**dpat_config_params)
+            # 添加dropout到各个配置中
+            dropout = self.config['model'].get('dropout', 0.1)
+            alignment_config['dropout'] = dropout
+            semantic_config['dropout'] = dropout
+            fusion_config['dropout'] = dropout
             
-            self.model = DPAT(config)
+            self.model = DPAT(
+                alignment_config=alignment_config,
+                semantic_config=semantic_config,
+                fusion_config=fusion_config,
+                num_classes=self.config['model'].get('num_classes', 1),
+                dropout=dropout,
+                use_simple_semantic=self.config['model'].get('use_simple_semantic', False)
+            )
             self.model.to(self.device)
             
             # 计算参数量
@@ -250,12 +231,37 @@ class DPATFullPipeline:
             if self.model is None:
                 raise ValueError("模型未初始化，请先调用setup_model()")
             
-            # 使用现有的训练器
-            self.trainer = DPATTrainer(
-                model=self.model,
-                config=self.config,
-                device=self.device
-            )
+            # 创建具有嵌套结构的配置对象供trainer使用
+            from types import SimpleNamespace
+            
+            trainer_config = SimpleNamespace()
+            trainer_config.training = SimpleNamespace()
+            trainer_config.data = SimpleNamespace()
+            
+            # Training配置
+            trainer_config.training.epochs = self.config['training']['num_epochs']
+            trainer_config.training.lr = self.config['training']['learning_rate']
+            trainer_config.training.bert_lr = self.config['training']['bert_learning_rate']
+            trainer_config.training.weight_decay = self.config['training'].get('weight_decay', 0.01)
+            trainer_config.training.batch_size = self.config['training']['batch_size']
+            trainer_config.training.num_workers = self.config['hardware']['num_workers']
+            trainer_config.training.mixed_precision = self.config['training_settings']['use_amp']
+            trainer_config.training.max_grad_norm = self.config['training']['max_grad_norm']
+            
+            # Data配置
+            trainer_config.data.train_data_path = self.config['data']['train_data_path']
+            # 添加data_processing字段到data配置中
+            for key, value in self.config['data_processing'].items():
+                setattr(trainer_config.data, key, value)
+            self.trainer = DPATTrainer(trainer_config)
+            
+            # 替换trainer的模型和数据加载器为我们已经创建的
+            self.trainer.model = self.model
+            self.trainer.train_loader = self.train_loader
+            self.trainer.val_loader = self.val_loader
+            
+            # 重新设置优化器以使用我们的模型
+            self.trainer._setup_optimizer()
             
             logger.info("训练器创建成功")
             return True
@@ -286,12 +292,11 @@ class DPATFullPipeline:
             
             logger.info(f"开始训练，训练轮数: {epochs}")
             
+            # 更新trainer的epochs设置
+            self.trainer.config.training.epochs = epochs
+            
             # 执行训练
-            training_history = self.trainer.train(
-                train_loader=self.train_loader,
-                val_loader=self.val_loader,
-                epochs=epochs
-            )
+            training_history = self.trainer.train()
             
             # 保存模型
             torch.save({
