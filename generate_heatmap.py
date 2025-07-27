@@ -190,8 +190,42 @@ class DPATFullPipeline:
     def setup_model(self):
         """设置DPAT模型"""
         try:
-            # 使用DPATConfig.from_yaml直接加载配置
-            config = DPATConfig.from_yaml(self.config_path)
+            # 映射配置文件字段到DPATConfig参数
+            dpat_config_params = {
+                'train_data_path': self.config['data']['train_data_path'],
+                'batch_size': self.config['training']['batch_size'],
+                'learning_rate': self.config['training']['learning_rate'],
+                'bert_learning_rate': self.config['training']['bert_learning_rate'],
+                'num_epochs': self.config['training']['num_epochs'],
+                'warmup_steps': self.config['training']['warmup_steps'],
+                'max_grad_norm': self.config['training']['max_grad_norm'],
+                'window_size': self.config['data_processing']['window_size'],
+                'seed_length': self.config['data_processing']['seed_length'],
+                'alignment_threshold': self.config['data_processing']['alignment_threshold'],
+                'max_seq_length': self.config['data_processing']['max_length'],
+                'max_bert_length': self.config['data_processing']['max_bert_length'],
+                'early_stopping_patience': self.config['training_settings']['early_stopping_patience'],
+                'save_top_k': self.config['training_settings']['save_top_k'],
+                'use_amp': self.config['training_settings']['use_amp'],
+                'accumulate_grad_batches': self.config['training_settings']['accumulate_grad_batches'],
+                'checkpoint_dir': self.config['paths']['checkpoint_dir'],
+                'log_dir': self.config['paths']['log_dir'],
+                'num_workers': self.config['hardware']['num_workers'],
+                'pin_memory': self.config['hardware']['pin_memory'],
+                'log_every_n_steps': self.config['logging']['log_every_n_steps'],
+                'val_check_interval': self.config['logging']['val_check_interval'],
+                'seed': self.config['seed'],
+                'dropout': self.config['model'].get('dropout', 0.1),
+                'align_channels': self.config['model']['alignment_config'].get('output_channels', 256),
+                'semantic_channels': self.config['model']['semantic_config'].get('proj_dim', 256),
+                'proj_dim': self.config['model']['fusion_config'].get('embed_dim', 256),
+                'num_heads': self.config['model']['fusion_config'].get('num_heads', 8),
+                'lstm_dim': self.config['model']['semantic_config'].get('lstm_hidden_size', 128),
+                'rna_bert_model': self.config['model']['semantic_config'].get('bert_model_name', 'multimolecule/rnafm'),
+            }
+            
+            # 创建DPATConfig对象
+            config = DPATConfig(**dpat_config_params)
             
             self.model = DPAT(config)
             self.model.to(self.device)
