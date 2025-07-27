@@ -190,12 +190,8 @@ class DPATFullPipeline:
     def setup_model(self):
         """设置DPAT模型"""
         try:
-            # 使用现有的DPAT模型
-            config = DPATConfig(
-                alignment_config=self.config['model']['alignment_config'],
-                semantic_config=self.config['model']['semantic_config'],
-                fusion_config=self.config['model']['fusion_config']
-            )
+            # 使用DPATConfig.from_yaml直接加载配置
+            config = DPATConfig.from_yaml(self.config_path)
             
             self.model = DPAT(config)
             self.model.to(self.device)
