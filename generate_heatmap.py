@@ -231,58 +231,46 @@ class DPATFullPipeline:
             if self.model is None:
                 raise ValueError("模型未初始化，请先调用setup_model()")
             
-            # 创建完整的DPATConfig对象
-            trainer_config = DPATConfig(
-                # Data paths
-                train_data_path=self.config['data']['train_data_path'],
-                
-                # Model parameters (从DPAT模型配置中提取)
-                align_channels=self.config['model']['alignment_config'].get('output_channels', 256),
-                semantic_channels=self.config['model']['semantic_config'].get('proj_dim', 256),
-                proj_dim=self.config['model']['fusion_config'].get('embed_dim', 256),
-                num_heads=self.config['model']['fusion_config'].get('num_heads', 8),
-                lstm_dim=self.config['model']['semantic_config'].get('lstm_hidden_size', 128),
-                dropout=self.config['model'].get('dropout', 0.1),
-                
-                # Training parameters
-                batch_size=self.config['training']['batch_size'],
-                learning_rate=self.config['training']['learning_rate'],
-                bert_learning_rate=self.config['training']['bert_learning_rate'],
-                num_epochs=self.config['training']['num_epochs'],
-                warmup_steps=self.config['training'].get('warmup_steps', 500),
-                max_grad_norm=self.config['training'].get('max_grad_norm', 0.5),
-                
-                # Data processing
-                window_size=self.config['data_processing']['window_size'],
-                seed_length=self.config['data_processing']['seed_length'],
-                alignment_threshold=self.config['data_processing']['alignment_threshold'],
-                max_seq_length=self.config['data_processing']['max_length'],
-                
-                # Training settings
-                early_stopping_patience=self.config['training_settings']['early_stopping_patience'],
-                save_top_k=self.config['training_settings']['save_top_k'],
-                use_amp=self.config['training_settings']['use_amp'],
-                accumulate_grad_batches=self.config['training_settings']['accumulate_grad_batches'],
-                
-                # Paths
-                checkpoint_dir=self.config['paths']['checkpoint_dir'],
-                log_dir=self.config['paths']['log_dir'],
-                
-                # RNA-BERT settings
-                rna_bert_model=self.config['model']['semantic_config'].get('bert_model_name', 'multimolecule/rnafm'),
-                max_bert_length=self.config['data_processing']['max_bert_length'],
-                
-                # Hardware
-                num_workers=self.config['hardware']['num_workers'],
-                pin_memory=self.config['hardware']['pin_memory'],
-                
-                # Logging
-                log_every_n_steps=self.config['logging']['log_every_n_steps'],
-                val_check_interval=self.config['logging']['val_check_interval'],
-                
-                # Seed
-                seed=self.config['seed']
-            )
+            # 创建DPATTrainer期望的嵌套配置结构
+            from types import SimpleNamespace
+            
+            trainer_config = SimpleNamespace()
+            
+            # Training子配置 (DPATTrainer使用 config.training.*)
+            trainer_config.training = SimpleNamespace()
+            trainer_config.training.lr = self.config['training']['learning_rate']
+            trainer_config.training.bert_lr = self.config['training']['bert_learning_rate'] 
+            trainer_config.training.weight_decay = self.config['training'].get('weight_decay', 0.01)
+            trainer_config.training.batch_size = self.config['training']['batch_size']
+            trainer_config.training.num_workers = self.config['hardware']['num_workers']
+            trainer_config.training.mixed_precision = self.config['training_settings']['use_amp']
+            trainer_config.training.max_grad_norm = self.config['training'].get('max_grad_norm', 0.5)
+            trainer_config.training.epochs = self.config['training']['num_epochs']
+            
+            # Data子配置 (DPATTrainer使用 config.data.*)
+            trainer_config.data = SimpleNamespace()
+            trainer_config.data.train_data_path = self.config['data']['train_data_path']
+            # 添加所有data_processing字段到data子配置
+            for key, value in self.config['data_processing'].items():
+                setattr(trainer_config.data, key, value)
+            
+            # 顶级配置属性 (DPATTrainer直接使用 config.*)
+            trainer_config.mixed_precision = self.config['training_settings']['use_amp']
+            
+            # Model子配置 (需要传递给DPAT构造函数)
+            trainer_config.model = SimpleNamespace()
+            trainer_config.model.alignment_config = self.config['model']['alignment_config'].copy()
+            trainer_config.model.semantic_config = self.config['model']['semantic_config'].copy()
+            trainer_config.model.fusion_config = self.config['model']['fusion_config'].copy()
+            trainer_config.model.num_classes = self.config['model'].get('num_classes', 1)
+            trainer_config.model.dropout = self.config['model'].get('dropout', 0.1)
+            trainer_config.model.use_simple_semantic = self.config['model'].get('use_simple_semantic', False)
+            
+            # 确保dropout传递到各个子配置
+            dropout = self.config['model'].get('dropout', 0.1)
+            trainer_config.model.alignment_config['dropout'] = dropout
+            trainer_config.model.semantic_config['dropout'] = dropout  
+            trainer_config.model.fusion_config['dropout'] = dropout
             
             # 保存现有的模型和数据加载器
             existing_model = self.model
