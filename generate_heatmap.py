@@ -130,7 +130,7 @@ class DPATFullPipeline:
                 'weight_decay': 0.01
             },
             'data': {
-                'train_path': 'data/miRAW_Train_Validation.txt',
+                'train_data_path': 'data/miRAW_Train_Validation.txt',
                 'test_paths': [
                     'data/miRAW_Test0.txt',
                     'data/miRAW_Test1.txt'
@@ -144,7 +144,7 @@ class DPATFullPipeline:
             # 使用现有的数据加载器
             batch_size = batch_size or self.config['training']['batch_size']
             
-            train_path = self.data_path or self.config['data']['train_path']
+            train_path = self.data_path or self.config['data']['train_data_path']
             
             # 创建数据加载器
             self.train_loader, self.val_loader = create_dataloaders(
