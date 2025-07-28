@@ -92,7 +92,13 @@ class SequenceAligner:
 def create_alignment_matrix(aligned_mirna: str, aligned_mrna: str, 
                           max_length: int = 50) -> np.ndarray:
     """
-    Create 10 x max_length one-hot alignment matrix.
+    Create 10 x max_length alignment matrix with complex encoding scheme.
+    
+    Encoding channels:
+    - Channels 0-3: A-pairing, U-pairing, G-pairing, C-pairing
+    - Channels 4-7: A-gap, U-gap, G-gap, C-gap
+    - Channel 8: Match positions
+    - Channel 9: Mismatch positions
     
     Args:
         aligned_mirna: Aligned miRNA sequence
@@ -100,10 +106,17 @@ def create_alignment_matrix(aligned_mirna: str, aligned_mrna: str,
         max_length: Maximum length for padding/truncation
         
     Returns:
-        One-hot matrix of shape (10, max_length)
+        Complex alignment matrix of shape (10, max_length)
     """
-    # Nucleotide encoding: A=0, U=1, G=2, C=3, gap=4
-    nucleotide_map = {'A': 0, 'U': 1, 'G': 2, 'C': 3, '-': 4}
+    # Define complementary base pairs including Watson-Crick and G:U wobble pairs
+    complement_pairs = {
+        ('A', 'U'): True, ('U', 'A'): True,
+        ('G', 'C'): True, ('C', 'G'): True,
+        ('G', 'U'): True, ('U', 'G'): True,  # G:U wobble pair
+    }
+    
+    # Nucleotide to channel mapping
+    nucleotide_to_channel = {'A': 0, 'U': 1, 'G': 2, 'C': 3}
     
     # Initialize matrix
     matrix = np.zeros((10, max_length), dtype=np.float32)
@@ -117,15 +130,38 @@ def create_alignment_matrix(aligned_mirna: str, aligned_mrna: str,
     seq_len = min(max_seq_len, max_length)
     
     for i in range(seq_len):
-        # miRNA encoding (first 5 channels)
         mirna_nt = aligned_mirna[i]
-        if mirna_nt in nucleotide_map:
-            matrix[nucleotide_map[mirna_nt], i] = 1.0
-        
-        # mRNA encoding (last 5 channels)  
         mrna_nt = aligned_mrna[i]
-        if mrna_nt in nucleotide_map:
-            matrix[5 + nucleotide_map[mrna_nt], i] = 1.0
+        
+        # Handle pairing channels (0-3)
+        if mirna_nt != '-' and mrna_nt != '-':
+            # Check if nucleotides form a complementary pair
+            if (mirna_nt, mrna_nt) in complement_pairs:
+                # Set pairing channel based on miRNA nucleotide
+                if mirna_nt in nucleotide_to_channel:
+                    channel = nucleotide_to_channel[mirna_nt]
+                    matrix[channel, i] = 1.0
+                
+                # Set match position (channel 8)
+                matrix[8, i] = 1.0
+            else:
+                # Set mismatch position (channel 9)
+                matrix[9, i] = 1.0
+        
+        # Handle gap channels (4-7)
+        elif mirna_nt == '-' and mrna_nt != '-':
+            # miRNA gap, mRNA nucleotide
+            if mrna_nt in nucleotide_to_channel:
+                gap_channel = 4 + nucleotide_to_channel[mrna_nt]
+                matrix[gap_channel, i] = 1.0
+        
+        elif mirna_nt != '-' and mrna_nt == '-':
+            # miRNA nucleotide, mRNA gap
+            if mirna_nt in nucleotide_to_channel:
+                gap_channel = 4 + nucleotide_to_channel[mirna_nt]
+                matrix[gap_channel, i] = 1.0
+        
+        # Both gaps case is handled by leaving all channels as 0
     
     return matrix
 
